@@ -167,3 +167,162 @@ Redis 有序集合和集合一样也是string类型元素的集合,且不允许�
 ![有序集合命令1](https://github.com/liuyashuang/RedisNotes/blob/master/img/zset01.png)</br>
 ![有序集合命令2](https://github.com/liuyashuang/RedisNotes/blob/master/img/zset02.png)</br>
 ![有序集合命令3](https://github.com/liuyashuang/RedisNotes/blob/master/img/zset03.png)
+
+### HyperLogLog
+Redis在2.8.9版本添加了HyperLog结构</br>
+Redis HyperLogLog是用来做基数统计的算法，优点是，在输入元素的数量或者体积非常非常大的，
+计算基数所需的空间总是固定的，并且很小的</br>
+在redis里面，每个HyperLogLog 键值需要花费12KB内存，就可以计算接近2^64个不同元素的基数</br>
+HyperLogLog只会根据输入元素来计算基数，而不会储存输入元素本事，所以HyperLogLog不能像集合那样
+返回输入的各个元素</br>
+
+**基数的概念**</br>
+比如数据集 {1, 3, 5, 7, 5, 7, 8}， 那么这个数据集的基数集为 {1, 3, 5 ,7, 8},
+基数(不重复元素)为5。 基数估计就是在误差可接受的范围内，快速计算基数
+```
+//实例
+redis 127.0.0.1:6379> PFADD runoobkey "redis"
+1) (integer) 1
+redis 127.0.0.1:6379> PFADD runoobkey "mongodb"
+1) (integer) 1
+redis 127.0.0.1:6379> PFADD runoobkey "mysql"
+1) (integer) 1
+redis 127.0.0.1:6379> PFCOUNT runoobkey
+(integer) 3
+```
+**基本命令**
+
+    PFADD key element [element]
+    添加指定元素到HyperLogLog 中
+    PFCOUNT key [key]
+    返回给定HyperLogLog 的基数估算值
+    PFMERGE destkey sourcekey [sourcekey]
+    将多个HyperLogLog 合并为一个HyperLogLog
+
+### Redis发布订阅
+Redis 发布订阅(pub/sub)是一种消息通信模式：发送者(pub)发送消息，订阅者(sub)接受消息</br>
+Redis 客户端可以订阅任意数量的频道</br>
+**常用命令**
+
+    PSUBSCRIBE pattern [pattern]
+    订阅一个或多个符合给定模式的频道
+    PUBSUB subcommand [argument[argument···]]
+    查看订阅与发布系统状态
+    PUBLISH channel message
+    将信息发送到指定的频道
+    PUNSUBSCRIBE [pattern [pattern]]
+    退订所有给定模式的频道
+    SUBSCRIBE channel [channel]
+    订阅给定的一个或多个频道的信息
+    UNSUBSCRIBE [channel [channel]]
+    退订给定的频道
+```
+//实例
+//创建了订阅频道名为 redisChat
+redis 127.0.0.1:6379> SUBSCRIBE redisChat
+Reading messages... (press Ctrl-C to quit)
+1) "subscribe"
+2) "redisChat"
+3) (integer) 1
+//重新开启个redis客户端，然后在同一个频道redisChat 发布两次消息
+redis 127.0.0.1:6379> PUBLISH redisChat "Redis is a great caching technique"
+(integer) 1
+redis 127.0.0.1:6379> PUBLISH redisChat "Learn redis by runoob.com"
+(integer) 1
+# 订阅者的客户端会显示如下消息
+1) "message"
+2) "redisChat"
+3) "Redis is a great caching technique"
+1) "message"
+2) "redisChat"
+3) "Learn redis by runoob.com"
+```
+### Redis 事务
+Redis 事务可以一次执行多个命令， 并且带有以下两个重要的保证
+  - 批量操作在发送EXEC 命令前被放入队列缓存
+  - 收到EXEC 命令后进入事务执行，事务中任意命令执行失败，其余的命令依然被执行
+  - 在事务执行过程，其他客户端提交的命令请求不会插入到事务执行命令序列中
+
+一个事务从开始到执行会经历以下三个阶段
+  - 开始事务
+  - 命令入队
+  - 执行事务
+
+**事务命令**
+
+    DISCARD
+    取消事务，放弃执行事务块内的所有命令
+    EXEC
+    执行所有事务块内的命令
+    MULTI
+    标记一个事务块的开始
+    UNWATCH
+    取消WATCH 命令对所有key 的监视
+    WATCH key [key]
+    监视一个或多个key，如果在事务执行之前这些key被其他命令所改动，那么事务将被打断
+
+**实例**</br>
+先以MULTI开始一个事务，然后将多个命令入队到事务中，最后由EXEC命令触发事务，一并执行事务中的所有命令
+```
+redis 127.0.0.1:6379> MULTI
+OK
+redis 127.0.0.1:6379> SET book-name "Mastering C++ in 21 days"
+QUEUED
+redis 127.0.0.1:6379> GET book-name
+QUEUED
+redis 127.0.0.1:6379> SADD tag "C++" "Programming" "Mastering Series"
+QUEUED
+redis 127.0.0.1:6379> SMEMBERS tag
+QUEUED
+redis 127.0.0.1:6379> EXEC
+1) OK
+2) "Mastering C++ in 21 days"
+3) (integer) 3
+4) 1) "Mastering Series"
+   2) "C++"
+   3) "Programming"
+```
+单个 Redis命令的执行是原子性的，但Redis没有在事务上增加任何维持原子性的机制，所以Redis
+事务的执行并不是原子性的</br>
+事务可以理解为一个打包的批量执行脚本，但批量指令并非原子化的操作，中间某条指令的失败不会
+导致前面已做指令的回滚，也不会造成后续的指令不做
+
+### Redis 脚本
+Redis 脚本使用Lua 解析器来执行脚本，执行脚本的常用命令为EVAL</br>
+**Redis 脚本命令**
+
+    EVAL script numkeys key [key] arg [arg]
+    执行 Lua脚本
+    EVALSHA sha1 numkeys key [key] arg [arg]
+    执行 Lua脚本
+    SCRIPT EXISTS script [script]
+    查看置顶的脚本是否已经被保存在缓存当中
+    SCRIPT FLUSH
+    从脚本缓存中移除所有脚本
+    SCRIPT KILL
+    杀死当前正在运行的 Lua脚本
+    SCRIPT LOAD script
+    将脚本script 添加到脚本缓存中，但是并不立即执行这个脚本
+
+**实例**</br>
+```
+redis 127.0.0.1:6379> EVAL "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}" 2 key1 key2 first second
+1) "key1"
+2) "key2"
+3) "first"
+4) "second"
+```
+### Redis 连接
+主要是用于连接redis服务</br>
+**连接命令**
+
+    AUTH password   验证密码是否正确
+    ECHO message    打印字符串
+    PING            查看服务是否运行
+    QUIT            关闭当前连接
+    SELECT index    切换到指定的数据库
+### Redis 服务器
+主要是用于管理redis服务</br>
+![服务器命令1](https://github.com/liuyashuang/RedisNotes/blob/master/img/server01.png)</br>
+![服务器命令2](https://github.com/liuyashuang/RedisNotes/blob/master/img/server02.png)</br>
+![服务器命令3](https://github.com/liuyashuang/RedisNotes/blob/master/img/server03.png)
